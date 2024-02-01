@@ -31,10 +31,11 @@ First you want to build the JAR which contains the custom SMT transforms.
 ```
 mvn package
 ```
-The JAR file output can then be found in the `target/` folder.  This JAR will need to be added to the classpath of your Kafka Connect workers.
+The JAR file output can then be found in the `target/` folder.  
 
-One approach is to put the JAR in the `libs/` folder of Kafka. For example, this could be: `/opt/kafka/libs`.
+Alternatively, a snapshot build of this JAR has been included in the `dist/` folder of this repo.
 
+This JAR will need to be added to the classpath of your Kafka Connect workers.  One approach is to put the JAR in the `libs/` folder of Kafka. For example, this could be: `/opt/kafka/libs`.
 
 ## Include SMT transforms in your Snowflake sink 
 
