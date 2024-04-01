@@ -1,3 +1,5 @@
+package com.snowflake.examples.kafka.smt;
+
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.transforms.Transformation;

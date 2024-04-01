@@ -8,7 +8,7 @@ Currently, the following examples are included in this repo:
 
 ### AddKafkaMetadataColumns
 
-This transform will populate top-level columns with Kafka topic, Kafka partition number and Kafka offset metadata.  
+This transform will populate top-level columns with Kafka topic, Kafka partition number and Kafka offset metadata, assuming that schematization is enabled in the Kafka Connector.  
 
 This duplicates Kafka metadata which is already persisted in the RECORD_METADATA variant, but may be useful to enable more efficient monitoring and query pruning in certain scenarios. 
 
@@ -19,6 +19,7 @@ Please use the following config to enable this transform. The column names are c
 "transforms.addKafkaMetadataColumns.columnNameKafkaPartition": "custom$kafka_partition",
 "transforms.addKafkaMetadataColumns.columnNameKafkaOffset": "custom$kafka_offset",
 ```
+***Please Note:*** These columns will be created automatically when schematization is enabled. 
 
 ### AddSinkTimestampHeader
 
@@ -92,7 +93,7 @@ properties syntax.
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",    
-    "transforms": "addSinkTimestampHeader,reshapeVehicleEvent",
+    "transforms": "addSinkTimestampHeader,reshapeVehicleEvent,addKafkaMetadataColumns",
     "transforms.addSinkTimestampHeader.type": "com.snowflake.examples.kafka.smt.AddSinkTimestampHeader",
     "transforms.reshapeVehicleEvent.type": "com.snowflake.examples.kafka.smt.ReshapeVehicleEvent",    
     "transforms.addKafkaMetadataColumns.type": "com.snowflake.examples.kafka.smt.AddKafkaMetadataColumns",
