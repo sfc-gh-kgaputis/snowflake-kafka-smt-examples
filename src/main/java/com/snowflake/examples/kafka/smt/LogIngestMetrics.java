@@ -25,9 +25,7 @@ public class LogIngestMetrics implements Transformation<SinkRecord> {
     private static ScheduledExecutorService scheduler;
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
 
-    public LogIngestMetrics() {
-        startScheduledTaskOnce();
-    }
+    public LogIngestMetrics() {}
 
     private static synchronized void startScheduledTaskOnce() {
         if (initialized.compareAndSet(false, true)) {
@@ -96,6 +94,8 @@ public class LogIngestMetrics implements Transformation<SinkRecord> {
     @Override
     public void configure(Map<String, ?> map) {
         // Configuration options can be set here
+        // Start logging thread here rather than in constructor
+        startScheduledTaskOnce();
     }
 
 }

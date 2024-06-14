@@ -26,6 +26,14 @@ Please use the following config to enable this transform. The column names are c
 This transform will add the system time (in millis) of the Kafka Connect worker to the Kafka message headers. This
 timestamp will then be present in the RECORD_METADATA variant column in Snowflake.
 
+### ParseAndFlattenXml
+
+This transform will take flat XML (no attributes, no deeply nested child elements) and parse it into a tabular structure. Please use in conjunction with a String or ByteArray value converter.
+
+***Please Note:*** You will notice that ParseAndFlattenXml throws a `DataException` in the case of a validation error.
+When this occurs, you will need to either configure a dead letter queue to accept error records, or this exception could
+cause the Kafka Connect task to fail and stop. Either of these may be the desired case if you want to avoid data loss.
+
 ### ReshapeVehicleEvent
 
 This transform will reshape JSON messages for a fictitious vehicle event stream use case. It will check for several
