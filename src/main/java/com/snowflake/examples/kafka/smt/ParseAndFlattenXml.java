@@ -3,18 +3,18 @@ package com.snowflake.examples.kafka.smt;
 import com.snowflake.examples.kafka.utils.XmlParsingException;
 import com.snowflake.examples.kafka.utils.XmlUtils;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.apache.kafka.connect.storage.StringConverter;
 import org.apache.kafka.connect.transforms.Transformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.Map;
 
 public class ParseAndFlattenXml implements Transformation<SinkRecord> {
-    StringConverter d = null;
+    private Charset xmlCharset = null;
     private static final Logger logger = LoggerFactory.getLogger(ParseAndFlattenXml.class);
 
     public String getLoggingIdentifier(SinkRecord record) {
@@ -24,11 +24,21 @@ public class ParseAndFlattenXml implements Transformation<SinkRecord> {
 
     @Override
     public void configure(Map<String, ?> configs) {
-        // Configuration options can be set here
+        String charsetName = (String) configs.get("encoding");
+        logger.info("Received config encoding: " + charsetName);
+        if (charsetName == null || charsetName.isEmpty()) {
+            throw new ConfigException("Missing or invalid config: encoding");
+        }
+        try {
+            xmlCharset = Charset.forName(charsetName);
+        } catch (Exception e) {
+            throw new ConfigException("Unable to load character set: " + charsetName, e);
+        }
     }
 
     @Override
     public SinkRecord apply(SinkRecord record) {
+        //TODO validate that bytes are received when xmlCharset is not null
         if (record.value() == null) {
             return record;
         }
@@ -38,8 +48,7 @@ public class ParseAndFlattenXml implements Transformation<SinkRecord> {
             xmlData = (String) rawValue;
         } else if (rawValue instanceof byte[]) {
             try {
-                //TODO make encoding configurable at the SMT level
-                xmlData = new String((byte[]) rawValue, StandardCharsets.UTF_8);
+                xmlData = new String((byte[]) rawValue, xmlCharset);
             } catch (Exception e) {
                 logger.error("Unable to convert byte array to string for message: " + getLoggingIdentifier(record), e);
                 throw new DataException("Unable to convert byte array to string", e);
@@ -71,6 +80,8 @@ public class ParseAndFlattenXml implements Transformation<SinkRecord> {
 
     @Override
     public ConfigDef config() {
-        return new ConfigDef(); // Define configuration here if needed
+        return new ConfigDef()
+                .define("encoding", ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "Expected encoding of XML data, as a Java charset name");
     }
+
 }
