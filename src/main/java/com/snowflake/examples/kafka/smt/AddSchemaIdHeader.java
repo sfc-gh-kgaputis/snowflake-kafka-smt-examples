@@ -8,9 +8,9 @@ import org.apache.kafka.connect.transforms.Transformation;
 
 import java.util.Map;
 
-public class AddSinkTimestampHeader<S> implements Transformation<SinkRecord> {
+public class AddSchemaIdHeader<S> implements Transformation<SinkRecord> {
 
-    public static final String TIMESTAMP_HEADER = "sink_timestamp_millis";
+    public static final String SCHEMA_ID_HEADER = "schema_id";
 
     @Override
     public void configure(Map<String, ?> configs) {
@@ -20,7 +20,7 @@ public class AddSinkTimestampHeader<S> implements Transformation<SinkRecord> {
     @Override
     public SinkRecord apply(SinkRecord record) {
         Headers headers = new ConnectHeaders(record.headers());
-        headers.addString(TIMESTAMP_HEADER, String.valueOf(System.currentTimeMillis()));
+        headers.addString(SCHEMA_ID_HEADER, record.valueSchema().version().toString());
 
         return new SinkRecord(
                 record.topic(),

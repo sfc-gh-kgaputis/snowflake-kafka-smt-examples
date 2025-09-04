@@ -21,10 +21,11 @@ Please use the following config to enable this transform. The column names are c
 ```
 ***Please Note:*** These columns will be created automatically when schematization is enabled. 
 
-### AddSinkTimestampHeader
+### AddSchemaIdHeader
 
-This transform will add the system time (in millis) of the Kafka Connect worker to the Kafka message headers. This
-timestamp will then be present in the RECORD_METADATA variant column in Snowflake.
+This transform will add the schema ID (version number) of the record's content schema to message headers,  
+which can be useful when loading Avro data with a Kafka Schema Registry. 
+The schema ID will then be present in the RECORD_METADATA variant column in Snowflake.
 
 ### ReshapeVehicleEvent
 
@@ -93,8 +94,8 @@ properties syntax.
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",    
-    "transforms": "addSinkTimestampHeader,reshapeVehicleEvent,addKafkaMetadataColumns",
-    "transforms.addSinkTimestampHeader.type": "com.snowflake.examples.kafka.smt.AddSinkTimestampHeader",
+    "transforms": "addSchemaIdHeader,reshapeVehicleEvent,addKafkaMetadataColumns",
+    "transforms.addSchemaIdHeader.type": "com.snowflake.examples.kafka.smt.AddSchemaIdHeader",
     "transforms.reshapeVehicleEvent.type": "com.snowflake.examples.kafka.smt.ReshapeVehicleEvent",    
     "transforms.addKafkaMetadataColumns.type": "com.snowflake.examples.kafka.smt.AddKafkaMetadataColumns",
     "transforms.addKafkaMetadataColumns.columnNameKafkaTopic": "custom$kafka_topic",

@@ -26,7 +26,6 @@ public class LogIngestMetrics implements Transformation<SinkRecord> {
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
 
     public LogIngestMetrics() {
-        startScheduledTaskOnce();
     }
 
     private static synchronized void startScheduledTaskOnce() {
@@ -90,12 +89,25 @@ public class LogIngestMetrics implements Transformation<SinkRecord> {
 
     @Override
     public void close() {
-        // TODO figure out how to stop reporting thread when there are multiple sinks using SMT
+        // Properly shutdown the scheduler when closing
+        if (scheduler != null && !scheduler.isShutdown()) {
+            log.info("Shutting down JMX metrics collection");
+            scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     @Override
     public void configure(Map<String, ?> map) {
-        // Configuration options can be set here
+        // Initialize the scheduled task only when the SMT is actually configured/used
+        startScheduledTaskOnce();
     }
 
 }
