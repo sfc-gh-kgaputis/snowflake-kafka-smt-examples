@@ -89,7 +89,7 @@ public class BytesToHexStringTest {
 
         BytesToHexString.Value<SourceRecord> transform = new BytesToHexString.Value<>();
         Map<String, Object> config = new HashMap<>();
-        config.put("prefix", "0x");
+        config.put("prefix", "0x");  // Note: For demo only - not recommended for Snowflake
         config.put("uppercase", true);
         transform.configure(config);
 

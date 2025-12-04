@@ -14,25 +14,20 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 /**
- * Kafka Connect SMT that converts byte array values to hex-encoded strings.
+ * Kafka Connect SMT that converts byte array fields to hex-encoded strings.
  * 
- * <p>This transformation always converts byte array VALUES to hex strings.
- * The storeAsVarchar flag controls whether the SCHEMA is also transformed:
- * <ul>
- *   <li><b>storeAsVarchar=true (default)</b>: Transform BYTES schema to STRING schema and convert values to hex.
- *       This maintains schema/value contract integrity.</li>
- *   <li><b>storeAsVarchar=false</b>: Keep BYTES schema unchanged but convert values to hex strings.
- *       This technically violates the schema contract but works with sinks like Snowflake.</li>
- * </ul>
+ * <p>This transformation converts BYTES schema fields to STRING schema and their values to hex-encoded strings.
+ * This maintains schema/value contract integrity required by Kafka Connect.
  * 
  * <p>Example configuration:
  * <pre>
  * transforms=bytesToHex
- * transforms.bytesToHex.type=com.snowflake.example.BytesToHexString$Value
- * transforms.bytesToHex.prefix=0x
+ * transforms.bytesToHex.type=com.snowflake.examples.kafka.smt.avro.BytesToHexString$Value
  * transforms.bytesToHex.uppercase=true
- * transforms.bytesToHex.storeAsVarchar=true
  * </pre>
+ * 
+ * <p><b>Note:</b> Snowflake's TRY_TO_BINARY(hex_string, 'HEX') function does not accept a '0x' prefix.
+ * Leave the prefix setting empty (default) when converting back to binary in Snowflake.
  * 
  * @param <R> the record type (SourceRecord or SinkRecord)
  */
@@ -49,19 +44,16 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
     // Configuration keys
     public static final String PREFIX_CONFIG = "prefix";
     public static final String UPPERCASE_CONFIG = "uppercase";
-    public static final String STORE_AS_VARCHAR_CONFIG = "storeAsVarchar";
     public static final String CACHE_SIZE_CONFIG = "cache.size";
 
     // Configuration documentation
-    private static final String PREFIX_DOC = "Optional prefix to add to hex strings (e.g., '0x')";
+    private static final String PREFIX_DOC = "Optional prefix to add to hex strings (e.g., '0x'). Note: Snowflake's TRY_TO_BINARY() does not accept a prefix.";
     private static final String UPPERCASE_DOC = "Use uppercase letters for hex encoding (A-F vs a-f)";
-    private static final String STORE_AS_VARCHAR_DOC = "When true (default), transform BYTES schema to STRING. When false, keep BYTES schema but convert values to hex (works with Snowflake sink).";
     private static final String CACHE_SIZE_DOC = "Size of the schema cache";
 
     // Default values
     private static final String DEFAULT_PREFIX = "";
     private static final boolean DEFAULT_UPPERCASE = false;
-    private static final boolean DEFAULT_STORE_AS_VARCHAR = true;
     private static final int DEFAULT_CACHE_SIZE = 16;
 
     public static final ConfigDef CONFIG_DEF = new ConfigDef()
@@ -75,11 +67,6 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
                     DEFAULT_UPPERCASE,
                     ConfigDef.Importance.LOW,
                     UPPERCASE_DOC)
-            .define(STORE_AS_VARCHAR_CONFIG,
-                    ConfigDef.Type.BOOLEAN,
-                    DEFAULT_STORE_AS_VARCHAR,
-                    ConfigDef.Importance.MEDIUM,
-                    STORE_AS_VARCHAR_DOC)
             .define(CACHE_SIZE_CONFIG,
                     ConfigDef.Type.INT,
                     DEFAULT_CACHE_SIZE,
@@ -91,7 +78,6 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
     private SchemaTransformer schemaTransformer;
     private ValueTransformer valueTransformer;
     private Cache<Schema, Schema> schemaCache;
-    private boolean storeAsVarchar;
 
     @Override
     public void configure(Map<String, ?> props) {
@@ -100,7 +86,6 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
         // Read configuration
         String prefix = config.getString(PREFIX_CONFIG);
         boolean uppercase = config.getBoolean(UPPERCASE_CONFIG);
-        this.storeAsVarchar = config.getBoolean(STORE_AS_VARCHAR_CONFIG);
         int cacheSize = config.getInt(CACHE_SIZE_CONFIG);
 
         // Initialize components
@@ -109,8 +94,8 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
         this.valueTransformer = new ValueTransformer(hexConverter);
         this.schemaCache = new SynchronizedCache<>(new LRUCache<>(cacheSize));
 
-        log.info("Configured BytesToHexString with prefix='{}', uppercase={}, storeAsVarchar={}", 
-                prefix, uppercase, storeAsVarchar);
+        log.info("Configured BytesToHexString with prefix='{}', uppercase={}", 
+                prefix, uppercase);
     }
 
     @Override
@@ -123,54 +108,28 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
             return record;
         }
 
-        // Always transform the value (convert bytes to hex strings)
-        Object transformedValue;
-        Schema targetSchema;
+        // Transform both schema and value (BYTES -> STRING)
+        Schema targetSchema = getTransformedSchema(schema);
         
-        if (storeAsVarchar) {
-            // Transform both schema and value
-            targetSchema = getTransformedSchema(schema);
-            
-            // If schema didn't change, no BYTES fields exist
-            if (targetSchema == schema) {
-                return record;
-            }
-            
-            if (schema.type() == Schema.Type.STRUCT) {
-                // For top-level structs, pass both original and transformed schemas
-                transformedValue = valueTransformer.transformStruct(
-                    (org.apache.kafka.connect.data.Struct) value,
-                    schema,
-                    targetSchema
-                );
-            } else {
-                // For other types, use the regular transform method
-                transformedValue = valueTransformer.transform(value, schema);
-            }
+        // If schema didn't change, no BYTES fields exist
+        if (targetSchema == schema) {
+            return record;
+        }
+        
+        Object transformedValue;
+        if (schema.type() == Schema.Type.STRUCT) {
+            // For top-level structs, pass both original and transformed schemas
+            transformedValue = valueTransformer.transformStruct(
+                (org.apache.kafka.connect.data.Struct) value,
+                schema,
+                targetSchema
+            );
         } else {
-            // Keep original schema but transform values
-            // This violates the schema contract but works with Snowflake sink
-            targetSchema = schema;
-            
-            // Check if schema has any BYTES fields
-            Schema testTransform = getTransformedSchema(schema);
-            if (testTransform == schema) {
-                // No BYTES fields to transform
-                return record;
-            }
-            
-            if (schema.type() == Schema.Type.STRUCT) {
-                transformedValue = valueTransformer.transformStruct(
-                    (org.apache.kafka.connect.data.Struct) value,
-                    schema,
-                    schema  // Use original schema for output struct
-                );
-            } else {
-                transformedValue = valueTransformer.transform(value, schema);
-            }
+            // For other types, use the regular transform method
+            transformedValue = valueTransformer.transform(value, schema);
         }
 
-        // Create new record with transformed value (and possibly transformed schema)
+        // Create new record with transformed schema and value
         return createRecord(record, targetSchema, transformedValue);
     }
 

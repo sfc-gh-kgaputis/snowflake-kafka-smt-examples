@@ -6,24 +6,27 @@
 
 ### BytesToHexString
 
-**Package:** `com.snowflake.examples.kafka.smt.avro`
-
-Converts Avro `BYTES` fields to hex-encoded strings in deeply nested schemas. Works recursively through Structs, Arrays, and Maps.
+Converts Avro `BYTES` fields to hex-encoded `STRING` fields. Works recursively through nested Structs, Arrays, and Maps.
 
 **Configuration:**
 ```properties
 transforms=bytesToHex
 transforms.bytesToHex.type=com.snowflake.examples.kafka.smt.avro.BytesToHexString$Value
-transforms.bytesToHex.prefix=0x              # Optional prefix (default: "")
-transforms.bytesToHex.uppercase=true         # Use A-F vs a-f (default: false)
-transforms.bytesToHex.storeAsVarchar=true    # Transform schema to STRING (default: true)
+transforms.bytesToHex.uppercase=false    # Optional (default: false)
 ```
 
 **Options:**
-- `storeAsVarchar=true` (default): Converts both schema and values (BYTES→STRING)
-- `storeAsVarchar=false`: Keeps BYTES schema but converts values to hex strings (Snowflake-compatible)
+- `uppercase` - Use uppercase (A-F) vs lowercase (a-f) hex. Default: `false`
+- `prefix` - Optional prefix string, e.g. `"0x"`. Default: `""` (empty)
 
-Use `$Key` for keys or `$Value` for values.
+> **⚠️ Snowflake Note:** Leave `prefix` empty (default). Snowflake's `TRY_TO_BINARY(col, 'HEX')` function does not accept '0x' or other prefixes.
+
+**Converting back to binary in Snowflake:**
+```sql
+SELECT TRY_TO_BINARY(hex_column, 'HEX') AS binary_data FROM table;
+```
+
+Use `$Key` for record keys or `$Value` for record values.
 
 ### AddKafkaMetadataColumns
 
@@ -122,7 +125,6 @@ Example Snowflake Sink connector with multiple transforms:
     
     "transforms": "bytesToHex,addMeta,metrics",
     "transforms.bytesToHex.type": "com.snowflake.examples.kafka.smt.avro.BytesToHexString$Value",
-    "transforms.bytesToHex.prefix": "0x",
     "transforms.addMeta.type": "com.snowflake.examples.kafka.smt.AddKafkaMetadataColumns",
     "transforms.addMeta.columnNameKafkaTopic": "kafka_topic",
     "transforms.addMeta.columnNameKafkaPartition": "kafka_partition",
