@@ -71,12 +71,16 @@ jobs:
     - name: Build release JARs
       run: mvn clean package -B
       
+    - name: Get version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+    
     - name: Upload JARs to release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          target/*-shaded.jar
-          target/*.jar
+          target/snowflake-kafka-smt-examples-${{ steps.version.outputs.VERSION }}-shaded.jar
+          target/snowflake-kafka-smt-examples-${{ steps.version.outputs.VERSION }}.jar
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
