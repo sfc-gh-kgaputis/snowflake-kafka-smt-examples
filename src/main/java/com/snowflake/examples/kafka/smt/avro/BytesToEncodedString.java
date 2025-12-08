@@ -4,6 +4,7 @@ import org.apache.kafka.common.cache.Cache;
 import org.apache.kafka.common.cache.LRUCache;
 import org.apache.kafka.common.cache.SynchronizedCache;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.transforms.Transformation;
@@ -14,49 +15,66 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 /**
- * Kafka Connect SMT that converts byte array fields to hex-encoded strings.
+ * Kafka Connect SMT that converts byte array fields to encoded strings (hex or base64).
  * 
- * <p>This transformation converts BYTES schema fields to STRING schema and their values to hex-encoded strings.
+ * <p>This transformation converts BYTES schema fields to STRING schema and their values to encoded strings.
  * This maintains schema/value contract integrity required by Kafka Connect.
  * 
- * <p>Example configuration:
+ * <p><b>Recommended:</b> Use BASE64 encoding for better efficiency and compatibility with Snowflake's 
+ * High-Performance Streaming Architecture.
+ * 
+ * <p>Example configuration (base64):
  * <pre>
- * transforms=bytesToHex
- * transforms.bytesToHex.type=com.snowflake.examples.kafka.smt.avro.BytesToHexString$Value
- * transforms.bytesToHex.uppercase=true
+ * transforms=bytesToString
+ * transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
+ * transforms.bytesToString.encoding=base64
  * </pre>
  * 
- * <p><b>Note:</b> Snowflake's TRY_TO_BINARY(hex_string, 'HEX') function does not accept a '0x' prefix.
- * Leave the prefix setting empty (default) when converting back to binary in Snowflake.
+ * <p>Example configuration (hex):
+ * <pre>
+ * transforms=bytesToString
+ * transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
+ * transforms.bytesToString.encoding=hex
+ * transforms.bytesToString.uppercase=true
+ * </pre>
  * 
  * @param <R> the record type (SourceRecord or SinkRecord)
  */
-public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Transformation<R> {
+public abstract class BytesToEncodedString<R extends ConnectRecord<R>> implements Transformation<R> {
 
-    private static final Logger log = LoggerFactory.getLogger(BytesToHexString.class);
+    private static final Logger log = LoggerFactory.getLogger(BytesToEncodedString.class);
 
     public static final String OVERVIEW_DOC = 
-            "Convert all BYTES fields to hex-encoded STRING fields in deeply nested schemas. "
+            "Convert all BYTES fields to encoded STRING fields in deeply nested schemas. "
+            + "Supports hex and base64 encoding. Base64 is recommended for efficiency. "
             + "The transformation recursively processes Structs, Arrays, and Maps. "
             + "<p/>Use the concrete transformation type designed for the record key (<code>" 
             + Key.class.getName() + "</code>) or value (<code>" + Value.class.getName() + "</code>).";
 
     // Configuration keys
+    public static final String ENCODING_CONFIG = "encoding";
     public static final String PREFIX_CONFIG = "prefix";
     public static final String UPPERCASE_CONFIG = "uppercase";
     public static final String CACHE_SIZE_CONFIG = "cache.size";
 
     // Configuration documentation
-    private static final String PREFIX_DOC = "Optional prefix to add to hex strings (e.g., '0x'). Note: Snowflake's TRY_TO_BINARY() does not accept a prefix.";
-    private static final String UPPERCASE_DOC = "Use uppercase letters for hex encoding (A-F vs a-f)";
+    private static final String ENCODING_DOC = "Encoding format: 'hex' or 'base64'. Base64 is recommended for efficiency.";
+    private static final String PREFIX_DOC = "Optional prefix to add to encoded strings (e.g., '0x' for hex). Note: Snowflake functions do not accept prefixes.";
+    private static final String UPPERCASE_DOC = "Use uppercase letters for hex encoding (A-F vs a-f). Only applies to hex encoding.";
     private static final String CACHE_SIZE_DOC = "Size of the schema cache";
 
     // Default values
+    private static final String DEFAULT_ENCODING = "base64";
     private static final String DEFAULT_PREFIX = "";
     private static final boolean DEFAULT_UPPERCASE = false;
     private static final int DEFAULT_CACHE_SIZE = 16;
 
     public static final ConfigDef CONFIG_DEF = new ConfigDef()
+            .define(ENCODING_CONFIG,
+                    ConfigDef.Type.STRING,
+                    DEFAULT_ENCODING,
+                    ConfigDef.Importance.HIGH,
+                    ENCODING_DOC)
             .define(PREFIX_CONFIG,
                     ConfigDef.Type.STRING,
                     DEFAULT_PREFIX,
@@ -84,18 +102,27 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
         SimpleConfig config = new SimpleConfig(CONFIG_DEF, props);
 
         // Read configuration
+        String encodingStr = config.getString(ENCODING_CONFIG);
         String prefix = config.getString(PREFIX_CONFIG);
         boolean uppercase = config.getBoolean(UPPERCASE_CONFIG);
         int cacheSize = config.getInt(CACHE_SIZE_CONFIG);
 
+        // Parse encoding
+        ByteEncoder.Encoding encoding;
+        try {
+            encoding = ByteEncoder.Encoding.valueOf(encodingStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ConfigException("Invalid encoding: " + encodingStr + ". Must be 'hex' or 'base64'");
+        }
+
         // Initialize components
-        HexConverter hexConverter = new HexConverter(prefix, uppercase);
+        ByteEncoder byteEncoder = new ByteEncoder(encoding, prefix, uppercase);
         this.schemaTransformer = new SchemaTransformer();
-        this.valueTransformer = new ValueTransformer(hexConverter);
+        this.valueTransformer = new ValueTransformer(byteEncoder);
         this.schemaCache = new SynchronizedCache<>(new LRUCache<>(cacheSize));
 
-        log.info("Configured BytesToHexString with prefix='{}', uppercase={}", 
-                prefix, uppercase);
+        log.info("Configured BytesToEncodedString with encoding='{}', prefix='{}', uppercase={}", 
+                encodingStr, prefix, uppercase);
     }
 
     @Override
@@ -179,7 +206,7 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
     /**
      * Transformation for record keys.
      */
-    public static final class Key<R extends ConnectRecord<R>> extends BytesToHexString<R> {
+    public static final class Key<R extends ConnectRecord<R>> extends BytesToEncodedString<R> {
         
         @Override
         protected Schema getRecordSchema(R record) {
@@ -208,7 +235,7 @@ public abstract class BytesToHexString<R extends ConnectRecord<R>> implements Tr
     /**
      * Transformation for record values.
      */
-    public static final class Value<R extends ConnectRecord<R>> extends BytesToHexString<R> {
+    public static final class Value<R extends ConnectRecord<R>> extends BytesToEncodedString<R> {
         
         @Override
         protected Schema getRecordSchema(R record) {

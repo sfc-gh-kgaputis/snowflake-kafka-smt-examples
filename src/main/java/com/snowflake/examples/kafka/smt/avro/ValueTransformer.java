@@ -12,17 +12,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Handles value transformation: converts byte arrays to hex strings.
+ * Handles value transformation: converts byte arrays to encoded strings.
  * 
  * This class recursively walks through values and converts all byte arrays
- * (or ByteBuffers) to hex-encoded strings based on the schema.
+ * (or ByteBuffers) to encoded strings based on the schema.
  */
 class ValueTransformer {
 
-    private final HexConverter hexConverter;
+    private final ByteEncoder byteEncoder;
 
-    public ValueTransformer(HexConverter hexConverter) {
-        this.hexConverter = hexConverter;
+    public ValueTransformer(ByteEncoder byteEncoder) {
+        this.byteEncoder = byteEncoder;
     }
 
     /**
@@ -54,11 +54,11 @@ class ValueTransformer {
     }
 
     /**
-     * Convert bytes (byte[] or ByteBuffer) to hex string.
+     * Convert bytes (byte[] or ByteBuffer) to encoded string.
      */
     private String transformBytesToHex(Object bytesValue) {
         byte[] bytes = extractBytes(bytesValue);
-        return hexConverter.toHex(bytes);
+        return byteEncoder.encode(bytes);
     }
 
     /**
