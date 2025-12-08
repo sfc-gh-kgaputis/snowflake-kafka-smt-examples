@@ -4,25 +4,40 @@
 
 ## Available Transformations
 
-### BytesToHexString
+### BytesToEncodedString
 
-Converts Avro `BYTES` fields to hex-encoded `STRING` fields. Works recursively through nested Structs, Arrays, and Maps.
+Converts Avro `BYTES` fields to encoded `STRING` fields (base64 or hex). Works recursively through nested Structs, Arrays, and Maps.
 
-**Configuration:**
+> **💡 Recommended:** Use `base64` encoding for better efficiency and forward compatibility with the Snowpipe Streaming High-Performance Architecture (SSv2).
+
+**Configuration (base64 - recommended):**
 ```properties
-transforms=bytesToHex
-transforms.bytesToHex.type=com.snowflake.examples.kafka.smt.avro.BytesToHexString$Value
-transforms.bytesToHex.uppercase=false    # Optional (default: false)
+transforms=bytesToString
+transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
+transforms.bytesToString.encoding=base64
+```
+
+**Configuration (hex):**
+```properties
+transforms=bytesToString
+transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
+transforms.bytesToString.encoding=hex
+transforms.bytesToString.uppercase=true    # Optional
 ```
 
 **Options:**
-- `uppercase` - Use uppercase (A-F) vs lowercase (a-f) hex. Default: `false`
-- `prefix` - Optional prefix string, e.g. `"0x"`. Default: `""` (empty)
+- `encoding` - Encoding format: `base64` or `hex`. Default: `base64`
+- `uppercase` - Use uppercase (A-F) vs lowercase (a-f). Only applies to hex. Default: `false`
+- `prefix` - Optional prefix string. Default: `""` (empty)
 
-> **⚠️ Snowflake Note:** Leave `prefix` empty (default). Snowflake's `TRY_TO_BINARY(col, 'HEX')` function does not accept '0x' or other prefixes.
+> **⚠️ Note:** Snowflake's `TRY_TO_BINARY()` and `BASE64_DECODE_BINARY()` functions do not accept prefixes. Leave `prefix` empty (default).
 
 **Converting back to binary in Snowflake:**
 ```sql
+-- For base64 encoding (recommended)
+SELECT BASE64_DECODE_BINARY(encoded_column) AS binary_data FROM table;
+
+-- For hex encoding
 SELECT TRY_TO_BINARY(hex_column, 'HEX') AS binary_data FROM table;
 ```
 
@@ -123,8 +138,9 @@ Example Snowflake Sink connector with multiple transforms:
     "snowflake.database.name": "mydb",
     "snowflake.schema.name": "public",
     
-    "transforms": "bytesToHex,addMeta,metrics",
-    "transforms.bytesToHex.type": "com.snowflake.examples.kafka.smt.avro.BytesToHexString$Value",
+    "transforms": "bytesToString,addMeta,metrics",
+    "transforms.bytesToString.type": "com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value",
+    "transforms.bytesToString.encoding": "base64",
     "transforms.addMeta.type": "com.snowflake.examples.kafka.smt.AddKafkaMetadataColumns",
     "transforms.addMeta.columnNameKafkaTopic": "kafka_topic",
     "transforms.addMeta.columnNameKafkaPartition": "kafka_partition",
