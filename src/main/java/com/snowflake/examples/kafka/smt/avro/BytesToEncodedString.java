@@ -23,9 +23,9 @@ import java.util.Map;
  * <p><b>Recommended:</b> Use BASE64 encoding for better efficiency and compatibility with Snowflake's 
  * High-Performance Streaming Architecture.
  * 
- * <p><b>Decimal Handling:</b> Automatically handles Kafka Connect Decimal logical types (BigDecimal values).
- * When convertDecimalsToString=true (default), Decimals are converted to human-readable strings.
- * When false, Decimal fields are skipped. This is useful for Debezium CDC streams.
+ * <p><b>Decimal Handling:</b> Automatically detects Kafka Connect Decimal logical types (BigDecimal values).
+ * By default, Decimal fields are skipped and passed through unchanged.
+ * Set convertDecimalsToString=true to convert Decimals to human-readable strings (useful for Debezium CDC).
  * 
  * <p>Example configuration (base64 - recommended):
  * <pre>
@@ -42,12 +42,12 @@ import java.util.Map;
  * transforms.bytesToString.uppercase=true
  * </pre>
  * 
- * <p>Example configuration (skip decimals):
+ * <p>Example configuration (convert decimals to strings):
  * <pre>
  * transforms=bytesToString
  * transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
  * transforms.bytesToString.encoding=base64
- * transforms.bytesToString.convertDecimalsToString=false
+ * transforms.bytesToString.convertDecimalsToString=true
  * </pre>
  * 
  * @param <R> the record type (SourceRecord or SinkRecord)
@@ -74,14 +74,14 @@ public abstract class BytesToEncodedString<R extends ConnectRecord<R>> implement
     private static final String ENCODING_DOC = "Encoding format: 'hex' or 'base64'. Base64 is recommended for efficiency.";
     private static final String PREFIX_DOC = "Optional prefix to add to encoded strings (e.g., '0x' for hex). Note: Snowflake functions do not accept prefixes.";
     private static final String UPPERCASE_DOC = "Use uppercase letters for hex encoding (A-F vs a-f). Only applies to hex encoding.";
-    private static final String CONVERT_DECIMALS_DOC = "Convert Decimal logical types (BigDecimal) to human-readable strings. When false, Decimal fields are skipped.";
+    private static final String CONVERT_DECIMALS_DOC = "Convert Decimal logical types (BigDecimal) to human-readable strings. When false (default), Decimal fields are skipped.";
     private static final String CACHE_SIZE_DOC = "Size of the schema cache";
 
     // Default values
     private static final String DEFAULT_ENCODING = "base64";
     private static final String DEFAULT_PREFIX = "";
     private static final boolean DEFAULT_UPPERCASE = false;
-    private static final boolean DEFAULT_CONVERT_DECIMALS = true;
+    private static final boolean DEFAULT_CONVERT_DECIMALS = false;
     private static final int DEFAULT_CACHE_SIZE = 16;
 
     public static final ConfigDef CONFIG_DEF = new ConfigDef()

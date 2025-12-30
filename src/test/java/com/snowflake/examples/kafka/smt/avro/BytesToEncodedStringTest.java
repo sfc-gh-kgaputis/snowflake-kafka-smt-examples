@@ -660,10 +660,10 @@ public class BytesToEncodedStringTest {
     }
 
     /**
-     * Test 17: Decimal with large precision (Debezium scenario)
+     * Test 17: Decimal with large precision (Debezium scenario) - opt-in conversion
      */
     @Test
-    public void testDebeziumDecimal() {
+    public void testDebeziumDecimalWithConversion() {
         // Debezium uses scale=38, precision defined in parameters
         Schema decimalSchema = Decimal.builder(38).parameter("scale", "9").build();
         
@@ -681,7 +681,9 @@ public class BytesToEncodedStringTest {
         );
 
         BytesToEncodedString.Value<SourceRecord> transform = new BytesToEncodedString.Value<>();
-        transform.configure(Collections.emptyMap());  // Uses default: convertDecimalsToString=true
+        Map<String, Object> config = new HashMap<>();
+        config.put("convertDecimalsToString", true);  // Opt-in to convert decimals
+        transform.configure(config);
 
         SourceRecord transformed = transform.apply(record);
 
@@ -693,6 +695,51 @@ public class BytesToEncodedStringTest {
         // Schema should be STRING
         Schema outputSchema = transformed.valueSchema();
         assertEquals(Schema.Type.STRING, outputSchema.field("FILTERINFOID").schema().type());
+
+        transform.close();
+    }
+
+    /**
+     * Test 18: Default behavior - decimals are NOT converted
+     */
+    @Test
+    public void testDefaultDecimalBehavior() {
+        Schema decimalSchema = Decimal.schema(2);
+        
+        Schema schema = SchemaBuilder.struct()
+                .field("amount", decimalSchema)
+                .field("rawBytes", Schema.BYTES_SCHEMA)
+                .build();
+
+        BigDecimal originalAmount = new BigDecimal("99.99");
+        Struct value = new Struct(schema)
+                .put("amount", originalAmount)
+                .put("rawBytes", new byte[]{0x01, 0x02});
+
+        SourceRecord record = new SourceRecord(
+                null, null, "test-topic", 0, schema, value
+        );
+
+        BytesToEncodedString.Value<SourceRecord> transform = new BytesToEncodedString.Value<>();
+        transform.configure(Collections.emptyMap());  // Uses default: convertDecimalsToString=false
+
+        SourceRecord transformed = transform.apply(record);
+
+        // Verify: decimal unchanged, raw bytes encoded
+        Struct outputValue = (Struct) transformed.value();
+        
+        // Decimal should remain as BigDecimal
+        Object amountValue = outputValue.get("amount");
+        assertTrue(amountValue instanceof BigDecimal);
+        assertEquals(originalAmount, amountValue);
+        
+        // Raw bytes should be encoded (base64 by default)
+        assertEquals("AQI=", outputValue.getString("rawBytes"));
+
+        // Schema: decimal stays BYTES, raw bytes becomes STRING
+        Schema outputSchema = transformed.valueSchema();
+        assertEquals(Schema.Type.BYTES, outputSchema.field("amount").schema().type());
+        assertEquals(Schema.Type.STRING, outputSchema.field("rawBytes").schema().type());
 
         transform.close();
     }

@@ -27,7 +27,7 @@ transforms.bytesToString.uppercase=true    # Optional
 
 **Options:**
 - `encoding` - Encoding format: `base64` or `hex`. Default: `base64`
-- `convertDecimalsToString` - Convert Decimal logical types to readable strings. Default: `true`
+- `convertDecimalsToString` - Convert Decimal logical types to readable strings. Default: `false`
 - `uppercase` - Use uppercase (A-F) vs lowercase (a-f). Only applies to hex. Default: `false`
 - `prefix` - Optional prefix string. Default: `""` (empty)
 
@@ -35,12 +35,17 @@ transforms.bytesToString.uppercase=true    # Optional
 
 **Decimal Handling:**
 
-This SMT automatically handles Kafka Connect Decimal logical types (commonly used by Debezium):
-- When `convertDecimalsToString=true` (default): Decimals are converted to human-readable strings (e.g., `"123.45"`)
-- When `convertDecimalsToString=false`: Decimal fields are skipped and passed through unchanged
-- Raw binary BYTES fields are always encoded regardless of this setting
+This SMT automatically detects Kafka Connect Decimal logical types (commonly used by Debezium):
+- **Default behavior** (`convertDecimalsToString=false`): Decimal fields are skipped and passed through unchanged
+- **Opt-in conversion** (`convertDecimalsToString=true`): Decimals are converted to human-readable strings (e.g., `"123.45"`)
+- **Raw BYTES fields** are always encoded regardless of this setting
 
-Example Debezium decimal field:
+**To convert Debezium decimals to strings:**
+```properties
+transforms.bytesToString.convertDecimalsToString=true
+```
+
+Example output with conversion enabled:
 ```json
 {
   "FILTERINFOID": "123456789.123456789",  // Converted from BigDecimal
