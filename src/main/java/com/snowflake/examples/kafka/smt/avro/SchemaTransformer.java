@@ -1,5 +1,6 @@
 package com.snowflake.examples.kafka.smt.avro;
 
+import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
@@ -8,13 +9,20 @@ import org.apache.kafka.connect.data.SchemaBuilder;
  * Handles schema transformation: converts BYTES fields to STRING fields.
  * 
  * This class recursively walks through schemas and builds new schemas
- * where every BYTES field becomes a STRING field.
+ * where BYTES fields become STRING fields. Handles Decimal logical types
+ * based on configuration.
  */
 class SchemaTransformer {
 
+    private final boolean convertDecimalsToString;
+
+    public SchemaTransformer(boolean convertDecimalsToString) {
+        this.convertDecimalsToString = convertDecimalsToString;
+    }
+
     /**
-     * Transform a schema, converting all BYTES fields to STRING.
-     * Returns the original schema if no BYTES fields are found.
+     * Transform a schema, converting BYTES fields to STRING (except Decimal when configured).
+     * Returns the original schema if no transformable BYTES fields are found.
      */
     public Schema transform(Schema schema) {
         if (schema == null) {
@@ -23,7 +31,7 @@ class SchemaTransformer {
 
         switch (schema.type()) {
             case BYTES:
-                return transformBytesToString(schema);
+                return transformBytesSchema(schema);
             
             case STRUCT:
                 return transformStruct(schema);
@@ -41,21 +49,53 @@ class SchemaTransformer {
     }
 
     /**
+     * Transform BYTES schema - handle Decimal logical type or raw bytes.
+     */
+    private Schema transformBytesSchema(Schema bytesSchema) {
+        // Check if this is a Decimal logical type
+        if (isDecimalLogicalType(bytesSchema)) {
+            if (convertDecimalsToString) {
+                // Convert Decimal BYTES to STRING
+                return transformBytesToString(bytesSchema);
+            } else {
+                // Skip - keep original BYTES schema
+                return bytesSchema;
+            }
+        } else {
+            // Raw bytes - always convert to STRING
+            return transformBytesToString(bytesSchema);
+        }
+    }
+
+    /**
+     * Check if schema represents a Decimal logical type.
+     */
+    private boolean isDecimalLogicalType(Schema schema) {
+        return schema.name() != null && schema.name().equals(Decimal.LOGICAL_NAME);
+    }
+
+    /**
      * Convert a BYTES schema to a STRING schema.
-     * Preserves optionality and other metadata.
+     * Preserves optionality and other metadata, but removes logical type information.
      */
     private Schema transformBytesToString(Schema bytesSchema) {
         SchemaBuilder builder = SchemaBuilder.string();
         
-        copySchemaMetadata(bytesSchema, builder);
-        
-        // Convert default value if present
-        if (bytesSchema.defaultValue() != null) {
-            // Note: We can't convert bytes to hex here without the config,
-            // so we skip default value conversion. In practice, BYTES fields
-            // rarely have default values.
-            builder.defaultValue(null);
+        // Copy metadata but NOT the name (which contains logical type info for Decimals)
+        if (bytesSchema.version() != null) {
+            builder.version(bytesSchema.version());
         }
+        if (bytesSchema.doc() != null) {
+            builder.doc(bytesSchema.doc());
+        }
+        if (bytesSchema.parameters() != null) {
+            builder.parameters(bytesSchema.parameters());
+        }
+        if (bytesSchema.isOptional()) {
+            builder.optional();
+        }
+        
+        // Don't set a default value for converted fields
         
         return builder.build();
     }
