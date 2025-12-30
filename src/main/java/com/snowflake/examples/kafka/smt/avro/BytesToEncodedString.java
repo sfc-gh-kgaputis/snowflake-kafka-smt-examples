@@ -23,7 +23,11 @@ import java.util.Map;
  * <p><b>Recommended:</b> Use BASE64 encoding for better efficiency and compatibility with Snowflake's 
  * High-Performance Streaming Architecture.
  * 
- * <p>Example configuration (base64):
+ * <p><b>Decimal Handling:</b> Automatically handles Kafka Connect Decimal logical types (BigDecimal values).
+ * When convertDecimalsToString=true (default), Decimals are converted to human-readable strings.
+ * When false, Decimal fields are skipped. This is useful for Debezium CDC streams.
+ * 
+ * <p>Example configuration (base64 - recommended):
  * <pre>
  * transforms=bytesToString
  * transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
@@ -36,6 +40,14 @@ import java.util.Map;
  * transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
  * transforms.bytesToString.encoding=hex
  * transforms.bytesToString.uppercase=true
+ * </pre>
+ * 
+ * <p>Example configuration (skip decimals):
+ * <pre>
+ * transforms=bytesToString
+ * transforms.bytesToString.type=com.snowflake.examples.kafka.smt.avro.BytesToEncodedString$Value
+ * transforms.bytesToString.encoding=base64
+ * transforms.bytesToString.convertDecimalsToString=false
  * </pre>
  * 
  * @param <R> the record type (SourceRecord or SinkRecord)
@@ -55,18 +67,21 @@ public abstract class BytesToEncodedString<R extends ConnectRecord<R>> implement
     public static final String ENCODING_CONFIG = "encoding";
     public static final String PREFIX_CONFIG = "prefix";
     public static final String UPPERCASE_CONFIG = "uppercase";
+    public static final String CONVERT_DECIMALS_CONFIG = "convertDecimalsToString";
     public static final String CACHE_SIZE_CONFIG = "cache.size";
 
     // Configuration documentation
     private static final String ENCODING_DOC = "Encoding format: 'hex' or 'base64'. Base64 is recommended for efficiency.";
     private static final String PREFIX_DOC = "Optional prefix to add to encoded strings (e.g., '0x' for hex). Note: Snowflake functions do not accept prefixes.";
     private static final String UPPERCASE_DOC = "Use uppercase letters for hex encoding (A-F vs a-f). Only applies to hex encoding.";
+    private static final String CONVERT_DECIMALS_DOC = "Convert Decimal logical types (BigDecimal) to human-readable strings. When false, Decimal fields are skipped.";
     private static final String CACHE_SIZE_DOC = "Size of the schema cache";
 
     // Default values
     private static final String DEFAULT_ENCODING = "base64";
     private static final String DEFAULT_PREFIX = "";
     private static final boolean DEFAULT_UPPERCASE = false;
+    private static final boolean DEFAULT_CONVERT_DECIMALS = true;
     private static final int DEFAULT_CACHE_SIZE = 16;
 
     public static final ConfigDef CONFIG_DEF = new ConfigDef()
@@ -75,6 +90,11 @@ public abstract class BytesToEncodedString<R extends ConnectRecord<R>> implement
                     DEFAULT_ENCODING,
                     ConfigDef.Importance.HIGH,
                     ENCODING_DOC)
+            .define(CONVERT_DECIMALS_CONFIG,
+                    ConfigDef.Type.BOOLEAN,
+                    DEFAULT_CONVERT_DECIMALS,
+                    ConfigDef.Importance.MEDIUM,
+                    CONVERT_DECIMALS_DOC)
             .define(PREFIX_CONFIG,
                     ConfigDef.Type.STRING,
                     DEFAULT_PREFIX,
@@ -105,6 +125,7 @@ public abstract class BytesToEncodedString<R extends ConnectRecord<R>> implement
         String encodingStr = config.getString(ENCODING_CONFIG);
         String prefix = config.getString(PREFIX_CONFIG);
         boolean uppercase = config.getBoolean(UPPERCASE_CONFIG);
+        boolean convertDecimals = config.getBoolean(CONVERT_DECIMALS_CONFIG);
         int cacheSize = config.getInt(CACHE_SIZE_CONFIG);
 
         // Parse encoding
@@ -117,12 +138,12 @@ public abstract class BytesToEncodedString<R extends ConnectRecord<R>> implement
 
         // Initialize components
         ByteEncoder byteEncoder = new ByteEncoder(encoding, prefix, uppercase);
-        this.schemaTransformer = new SchemaTransformer();
-        this.valueTransformer = new ValueTransformer(byteEncoder);
+        this.schemaTransformer = new SchemaTransformer(convertDecimals);
+        this.valueTransformer = new ValueTransformer(byteEncoder, convertDecimals);
         this.schemaCache = new SynchronizedCache<>(new LRUCache<>(cacheSize));
 
-        log.info("Configured BytesToEncodedString with encoding='{}', prefix='{}', uppercase={}", 
-                encodingStr, prefix, uppercase);
+        log.info("Configured BytesToEncodedString with encoding='{}', prefix='{}', uppercase={}, convertDecimalsToString={}", 
+                encodingStr, prefix, uppercase, convertDecimals);
     }
 
     @Override

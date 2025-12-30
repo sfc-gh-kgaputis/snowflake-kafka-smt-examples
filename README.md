@@ -27,10 +27,26 @@ transforms.bytesToString.uppercase=true    # Optional
 
 **Options:**
 - `encoding` - Encoding format: `base64` or `hex`. Default: `base64`
+- `convertDecimalsToString` - Convert Decimal logical types to readable strings. Default: `true`
 - `uppercase` - Use uppercase (A-F) vs lowercase (a-f). Only applies to hex. Default: `false`
 - `prefix` - Optional prefix string. Default: `""` (empty)
 
 > **⚠️ Note:** Snowflake's `TRY_TO_BINARY()` and `BASE64_DECODE_BINARY()` functions do not accept prefixes. Leave `prefix` empty (default).
+
+**Decimal Handling:**
+
+This SMT automatically handles Kafka Connect Decimal logical types (commonly used by Debezium):
+- When `convertDecimalsToString=true` (default): Decimals are converted to human-readable strings (e.g., `"123.45"`)
+- When `convertDecimalsToString=false`: Decimal fields are skipped and passed through unchanged
+- Raw binary BYTES fields are always encoded regardless of this setting
+
+Example Debezium decimal field:
+```json
+{
+  "FILTERINFOID": "123456789.123456789",  // Converted from BigDecimal
+  "NAME": "TestRecord"
+}
+```
 
 **Converting back to binary in Snowflake:**
 ```sql

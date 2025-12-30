@@ -1,10 +1,12 @@
 package com.snowflake.examples.kafka.smt.avro;
 
+import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.DataException;
 
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,19 +17,22 @@ import java.util.Map;
  * Handles value transformation: converts byte arrays to encoded strings.
  * 
  * This class recursively walks through values and converts all byte arrays
- * (or ByteBuffers) to encoded strings based on the schema.
+ * (or ByteBuffers) to encoded strings based on the schema. Handles Decimal
+ * logical types specially.
  */
 class ValueTransformer {
 
     private final ByteEncoder byteEncoder;
+    private final boolean convertDecimalsToString;
 
-    public ValueTransformer(ByteEncoder byteEncoder) {
+    public ValueTransformer(ByteEncoder byteEncoder, boolean convertDecimalsToString) {
         this.byteEncoder = byteEncoder;
+        this.convertDecimalsToString = convertDecimalsToString;
     }
 
     /**
      * Transform a value based on its schema.
-     * Converts all BYTES values to hex strings.
+     * Converts BYTES values to encoded strings, handles Decimal logical types.
      */
     public Object transform(Object value, Schema schema) {
         if (value == null) {
@@ -36,7 +41,7 @@ class ValueTransformer {
 
         switch (schema.type()) {
             case BYTES:
-                return transformBytesToHex(value);
+                return transformBytes(value, schema);
             
             case STRUCT:
                 return transformStruct((Struct) value, schema);
@@ -54,9 +59,47 @@ class ValueTransformer {
     }
 
     /**
+     * Transform BYTES field - handle Decimal logical type or raw bytes.
+     */
+    private Object transformBytes(Object value, Schema schema) {
+        // Check if this is a Decimal logical type
+        if (isDecimalLogicalType(schema)) {
+            if (convertDecimalsToString) {
+                // Convert BigDecimal to string
+                return decimalToString(value);
+            } else {
+                // Skip - return unchanged
+                return value;
+            }
+        } else {
+            // Raw bytes - encode to string
+            return transformBytesToEncoded(value);
+        }
+    }
+
+    /**
+     * Check if schema represents a Decimal logical type.
+     */
+    private boolean isDecimalLogicalType(Schema schema) {
+        return schema.name() != null && schema.name().equals(Decimal.LOGICAL_NAME);
+    }
+
+    /**
+     * Convert Decimal value (BigDecimal) to plain string.
+     */
+    private String decimalToString(Object value) {
+        if (value instanceof BigDecimal) {
+            return ((BigDecimal) value).toPlainString();
+        }
+        throw new DataException(
+            "Expected BigDecimal for Decimal logical type, but got: " + value.getClass()
+        );
+    }
+
+    /**
      * Convert bytes (byte[] or ByteBuffer) to encoded string.
      */
-    private String transformBytesToHex(Object bytesValue) {
+    private String transformBytesToEncoded(Object bytesValue) {
         byte[] bytes = extractBytes(bytesValue);
         return byteEncoder.encode(bytes);
     }
@@ -103,7 +146,7 @@ class ValueTransformer {
     private Struct transformStruct(Struct originalStruct, Schema originalSchema) {
         // For nested structs, we need to rebuild the schema on the fly
         // This is less efficient but keeps the API simple for recursive calls
-        SchemaTransformer schemaTransformer = new SchemaTransformer();
+        SchemaTransformer schemaTransformer = new SchemaTransformer(convertDecimalsToString);
         Schema transformedSchema = schemaTransformer.transform(originalSchema);
         return transformStruct(originalStruct, originalSchema, transformedSchema);
     }
